@@ -64,7 +64,6 @@ if (WIN32 AND NOT CYGWIN AND NOT MSYS)
     add_definitions (/EHa)
     add_definitions (
         -DNOMINMAX
-        -DBOOST_SYSTEM_DYN_LINK
         -DBOOST_ALL_NO_LIB)
 endif()
 
@@ -73,21 +72,10 @@ if (CMAKE_COMPILER_IS_GNUCXX)
 endif ()
 
 if (AVRO_BUILD_TESTS OR AVRO_USE_BOOST)
-    # Boost 1.70 and above provide a BoostConfig.cmake package configuration file.
-    # It guarantees that Boost::system target exists if found.
-    # See https://cmake.org/cmake/help/latest/policy/CMP0167.html
-    find_package (Boost 1.70 REQUIRED CONFIG COMPONENTS system)
+    find_package (Boost 1.70 REQUIRED)
 endif ()
 
-include(FetchContent)
-FetchContent_Declare(
-        fmt
-        GIT_REPOSITORY  https://github.com/fmtlib/fmt.git
-        GIT_TAG         10.2.1
-        GIT_PROGRESS    TRUE
-        USES_TERMINAL_DOWNLOAD TRUE
-)
-FetchContent_MakeAvailable(fmt)
+find_package(fmt)
 
 find_package(Snappy CONFIG)
 if (Snappy_FOUND)
@@ -135,19 +123,15 @@ target_link_libraries(avrocpp PUBLIC
   $<BUILD_INTERFACE:fmt::fmt-header-only>
   $<BUILD_INTERFACE:ZLIB::ZLIB>
   $<BUILD_INTERFACE:$<TARGET_NAME_IF_EXISTS:Snappy::snappy>>
-  $<BUILD_INTERFACE:$<TARGET_NAME_IF_EXISTS:Boost::system>>
   $<INSTALL_INTERFACE:ZLIB::ZLIB>
   $<INSTALL_INTERFACE:$<TARGET_NAME_IF_EXISTS:Snappy::snappy>>
-  $<INSTALL_INTERFACE:$<TARGET_NAME_IF_EXISTS:Boost::system>>
 )
 target_link_libraries(avrocpp_s PUBLIC
   $<BUILD_INTERFACE:fmt::fmt-header-only>
   $<BUILD_INTERFACE:ZLIB::ZLIB>
   $<BUILD_INTERFACE:$<TARGET_NAME_IF_EXISTS:Snappy::snappy>>
-  $<BUILD_INTERFACE:$<TARGET_NAME_IF_EXISTS:Boost::system>>
   $<INSTALL_INTERFACE:ZLIB::ZLIB>
   $<INSTALL_INTERFACE:$<TARGET_NAME_IF_EXISTS:Snappy::snappy>>
-  $<INSTALL_INTERFACE:$<TARGET_NAME_IF_EXISTS:Boost::system>>
 )
 
 target_include_directories(avrocpp PUBLIC
@@ -205,7 +189,7 @@ if (AVRO_BUILD_TESTS)
 
     macro (unittest name)
         add_executable (${name} test/${name}.cc)
-        target_link_libraries (${name} avrocpp_s Boost::system ZLIB::ZLIB $<TARGET_NAME_IF_EXISTS:Snappy::snappy>)
+        target_link_libraries (${name} avrocpp_s ZLIB::ZLIB $<TARGET_NAME_IF_EXISTS:Snappy::snappy>)
         add_test (NAME ${name} WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             COMMAND ${CMAKE_CURRENT_BINARY_DIR}/${name})
     endmacro (unittest)
@@ -238,23 +222,48 @@ endif ()
 
 include (InstallRequiredSystemLibraries)
 
-set (CPACK_PACKAGE_FILE_NAME "avrocpp-${AVRO_VERSION_MAJOR}")
+set(CPACK_GENERATOR                    "RPM")
+set(CPACK_PACKAGE_NAME                 "${CMAKE_PROJECT_NAME}")
+set(CPACK_PACKAGE_VERSION              ${AVRO_VERSION})
+set(CPACK_PACKAGING_INSTALL_PREFIX     "/usr")
+set(CPACK_PACKAGE_RELOCATABLE          ON)
+set(CPACK_RPM_COMPONENT_INSTALL        ON)
 
-include (CPack)
+set(CPACK_RPM_PACKAGE_RELEASE_DIST "el9")
+set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
+set(CPACK_RPM_MAIN_COMPONENT runtime)
+set(CPACK_RPM_devel_PACKAGE_REQUIRES "avro-cpp = ${CPACK_PACKAGE_VERSION},")
+
+
 
 install (TARGETS avrocpp avrocpp_s
     EXPORT avrocpp_targets
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-    RUNTIME DESTINATION lib
-    INCLUDES DESTINATION include)
+    LIBRARY 
+        DESTINATION lib64
+        COMPONENT runtime
+        NAMELINK_COMPONENT devel
+    ARCHIVE
+        DESTINATION lib64
+        COMPONENT devel
+    RUNTIME
+        DESTINATION bin
+        COMPONENT devel
+    INCLUDES
+        DESTINATION include
+        COMPONENT devel)
 
 if (AVRO_BUILD_EXECUTABLES)
-    install (TARGETS avrogencpp EXPORT avrocpp_targets RUNTIME DESTINATION bin)
+    install (TARGETS avrogencpp 
+        EXPORT avrocpp_targets
+        RUNTIME
+            DESTINATION bin
+            COMPONENT devel)
 endif ()
 
-install (DIRECTORY include/avro DESTINATION include
-    FILES_MATCHING PATTERN *.hh)
+install (DIRECTORY include/avro
+        DESTINATION include
+        COMPONENT devel
+        FILES_MATCHING PATTERN *.hh)
 
 if (NOT CMAKE_BUILD_TYPE)
     set (CMAKE_BUILD_TYPE Release CACHE STRING
@@ -278,6 +287,7 @@ configure_package_config_file(
 install(EXPORT avrocpp_targets
     NAMESPACE Avro::
     DESTINATION lib/cmake/Avro
+    COMPONENT devel
     FILE "AvroTargets.cmake"
 )
 
@@ -285,4 +295,7 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/AvroConfig.cmake"
     "${CMAKE_CURRENT_BINARY_DIR}/AvroConfigVersion.cmake"
     DESTINATION lib/cmake/Avro
+    COMPONENT devel
 )
+
+include (CPack)
